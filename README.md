@@ -12,19 +12,11 @@ world_happiness_report_data_visualization/
 │   ├── 2017.csv
 │   ├── 2018.csv
 │   └── 2019.csv
-├── metadata/                    # Data normalization mappings
-│   ├── column_normalization.csv
-│   ├── country_aliases.csv
-│   ├── region_overrides.csv
-│   ├── continent_overrides.csv
-│   └── region_to_continent.csv
 ├── processed_data/             # Cleaned and combined dataset
 │   └── happiness_combined_2015_2019.csv
-├── src/                        # Data processing modules
+├── src/                        # Data processing helpers
 │   ├── __init__.py
-│   ├── data_loader.py         # Functions for loading processed data
-│   ├── data_normalizer.py     # Data cleaning and normalization
-│   └── utils.py               # Utility functions
+│   └── data_loader.py         # Self-contained processing pipeline
 ├── Notebook.ipynb             # Main analysis notebook
 └── README.md
 ```
@@ -48,7 +40,7 @@ pip install pandas numpy matplotlib seaborn plotly scikit-learn
 
 ### Data Processing
 
-The raw data has already been processed and saved to `processed_data/happiness_combined_2015_2019.csv`. If you need to regenerate the processed data:
+The raw data has already been processed and saved to `processed_data/happiness_combined_2015_2019.csv`. If you need to regenerate the processed data, the processing script ships with all metadata mappings embedded—no external CSVs are required:
 
 ```python
 from src.data_loader import process_and_save_data

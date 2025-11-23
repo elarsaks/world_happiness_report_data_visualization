@@ -1,23 +1,197 @@
-"""Data loading functions for World Happiness Report data."""
+"""Self-contained data processing helpers for the World Happiness Report."""
+
+from __future__ import annotations
 
 from pathlib import Path
+from typing import Dict
 
+import numpy as np
 import pandas as pd
 
-from .data_normalizer import enrich_with_continents, load_and_combine_years
-from .utils import load_column_normalization, load_simple_mapping
+# Project defaults
+RAW_DATA_DIR = Path("raw_data")
+METADATA_DIR = Path("metadata")
+PROCESSED_DATA_DIR = Path("processed_data")
+PROCESSED_FILENAME = "happiness_combined_2015_2019.csv"
 
 
-def load_processed_data(data_dir: Path = Path("processed_data")) -> pd.DataFrame:
-    """Load pre-processed happiness data from CSV.
+# Metadata embedded directly in this module to avoid external CSV dependencies.
+COLUMN_NORMALIZATION: Dict[int, Dict[str, str]] = {
+    2015: {
+        "Country": "country",
+        "Region": "region",
+        "Happiness Rank": "happiness_rank",
+        "Happiness Score": "happiness_score",
+        "Economy (GDP per Capita)": "gdp_per_capita",
+        "Family": "social_support",
+        "Health (Life Expectancy)": "healthy_life_expectancy",
+        "Freedom": "freedom",
+        "Generosity": "generosity",
+        "Trust (Government Corruption)": "corruption_perception",
+        "Standard Error": "standard_error",
+        "Dystopia Residual": "dystopia_residual",
+    },
+    2016: {
+        "Country": "country",
+        "Region": "region",
+        "Happiness Rank": "happiness_rank",
+        "Happiness Score": "happiness_score",
+        "Economy (GDP per Capita)": "gdp_per_capita",
+        "Family": "social_support",
+        "Health (Life Expectancy)": "healthy_life_expectancy",
+        "Freedom": "freedom",
+        "Generosity": "generosity",
+        "Trust (Government Corruption)": "corruption_perception",
+        "Lower Confidence Interval": "whisker_low",
+        "Upper Confidence Interval": "whisker_high",
+        "Dystopia Residual": "dystopia_residual",
+    },
+    2017: {
+        "Country": "country",
+        "Happiness.Rank": "happiness_rank",
+        "Happiness.Score": "happiness_score",
+        "Economy..GDP.per.Capita.": "gdp_per_capita",
+        "Family": "social_support",
+        "Health..Life.Expectancy.": "healthy_life_expectancy",
+        "Freedom": "freedom",
+        "Generosity": "generosity",
+        "Trust..Government.Corruption.": "corruption_perception",
+        "Whisker.high": "whisker_high",
+        "Whisker.low": "whisker_low",
+        "Dystopia.Residual": "dystopia_residual",
+    },
+    2018: {
+        "Country or region": "country",
+        "Overall rank": "happiness_rank",
+        "Score": "happiness_score",
+        "GDP per capita": "gdp_per_capita",
+        "Social support": "social_support",
+        "Healthy life expectancy": "healthy_life_expectancy",
+        "Freedom to make life choices": "freedom",
+        "Generosity": "generosity",
+        "Perceptions of corruption": "corruption_perception",
+    },
+    2019: {
+        "Country or region": "country",
+        "Overall rank": "happiness_rank",
+        "Score": "happiness_score",
+        "GDP per capita": "gdp_per_capita",
+        "Social support": "social_support",
+        "Healthy life expectancy": "healthy_life_expectancy",
+        "Freedom to make life choices": "freedom",
+        "Generosity": "generosity",
+        "Perceptions of corruption": "corruption_perception",
+    },
+}
 
-    Args:
-        data_dir: Directory containing the processed data file.
+COUNTRY_ALIASES: Dict[str, str] = {
+    "Trinidad & Tobago": "Trinidad and Tobago",
+    "Taiwan Province of China": "Taiwan",
+    "Hong Kong S.A.R., China": "Hong Kong",
+    "North Macedonia": "Macedonia",
+    "Bolivia (Plurinational State of)": "Bolivia",
+    "Congo, Dem. Rep.": "Congo (Kinshasa)",
+    "Democratic Republic of the Congo": "Congo (Kinshasa)",
+    "Congo, Rep.": "Congo (Brazzaville)",
+    "Republic of the Congo": "Congo (Brazzaville)",
+    "Eswatini": "Swaziland",
+    "Ivory Coast": "Ivory Coast",
+    "Czechia": "Czech Republic",
+    "United States of America": "United States",
+    "Russia": "Russian Federation",
+    "Slovak Republic": "Slovakia",
+}
 
-    Returns:
-        DataFrame with combined happiness data from 2015-2019.
-    """
-    filepath = data_dir / "happiness_combined_2015_2019.csv"
+REGION_OVERRIDES: Dict[str, str] = {
+    "Taiwan": "Eastern Asia",
+    "Hong Kong": "Eastern Asia",
+    "Macedonia": "Central and Eastern Europe",
+    "Somaliland Region": "Sub-Saharan Africa",
+    "Somalia": "Sub-Saharan Africa",
+    "South Sudan": "Sub-Saharan Africa",
+    "Gambia": "Sub-Saharan Africa",
+    "Lesotho": "Sub-Saharan Africa",
+    "Namibia": "Sub-Saharan Africa",
+    "Mozambique": "Sub-Saharan Africa",
+    "Madagascar": "Sub-Saharan Africa",
+    "Laos": "Southeastern Asia",
+    "Vietnam": "Southeastern Asia",
+    "Myanmar": "Southeastern Asia",
+    "Bhutan": "Southern Asia",
+    "Bangladesh": "Southern Asia",
+    "Cambodia": "Southeastern Asia",
+    "Belarus": "Central and Eastern Europe",
+    "Serbia": "Central and Eastern Europe",
+    "Bosnia and Herzegovina": "Central and Eastern Europe",
+    "Albania": "Central and Eastern Europe",
+    "Azerbaijan": "Central and Eastern Europe",
+    "Kazakhstan": "Central and Eastern Europe",
+    "Kyrgyzstan": "Central and Eastern Europe",
+    "Mongolia": "Eastern Asia",
+    "Armenia": "Central and Eastern Europe",
+    "Georgia": "Central and Eastern Europe",
+    "Uzbekistan": "Central and Eastern Europe",
+    "Turkmenistan": "Central and Eastern Europe",
+    "Tajikistan": "Central and Eastern Europe",
+    "Ukraine": "Central and Eastern Europe",
+    "Palestinian Territories": "Middle East and Northern Africa",
+    "Bahrain": "Middle East and Northern Africa",
+    "Qatar": "Middle East and Northern Africa",
+    "Saudi Arabia": "Middle East and Northern Africa",
+    "United Arab Emirates": "Middle East and Northern Africa",
+    "Oman": "Middle East and Northern Africa",
+    "Kuwait": "Middle East and Northern Africa",
+    "Yemen": "Middle East and Northern Africa",
+    "Iraq": "Middle East and Northern Africa",
+    "Iran": "Middle East and Northern Africa",
+    "Lebanon": "Middle East and Northern Africa",
+    "Jordan": "Middle East and Northern Africa",
+    "Algeria": "Middle East and Northern Africa",
+    "Morocco": "Middle East and Northern Africa",
+    "Tunisia": "Middle East and Northern Africa",
+}
+
+CONTINENT_OVERRIDES: Dict[str, str] = {
+    "Hong Kong": "Asia",
+    "Taiwan": "Asia",
+    "Somaliland Region": "Africa",
+    "Palestinian Territories": "Asia",
+    "Kosovo": "Europe",
+    "Macedonia": "Europe",
+    "Congo (Brazzaville)": "Africa",
+    "Congo (Kinshasa)": "Africa",
+    "Trinidad and Tobago": "Americas",
+    "United Arab Emirates": "Asia",
+    "Saudi Arabia": "Asia",
+    "Qatar": "Asia",
+    "Bahrain": "Asia",
+    "Oman": "Asia",
+    "Kuwait": "Asia",
+    "Yemen": "Asia",
+    "Iraq": "Asia",
+    "Iran": "Asia",
+}
+
+REGION_TO_CONTINENT: Dict[str, str] = {
+    "Western Europe": "Europe",
+    "Central and Eastern Europe": "Europe",
+    "Eastern Asia": "Asia",
+    "Southeastern Asia": "Asia",
+    "Southern Asia": "Asia",
+    "Central Asia": "Asia",
+    "Australia and New Zealand": "Oceania",
+    "North America": "Americas",
+    "Latin America and Caribbean": "Americas",
+    "Sub-Saharan Africa": "Africa",
+    "Middle East and Northern Africa": "Middle East & North Africa",
+    "Commonwealth of Independent States": "Europe & Central Asia",
+}
+
+
+def load_processed_data(data_dir: Path = PROCESSED_DATA_DIR) -> pd.DataFrame:
+    """Load pre-processed happiness data from CSV."""
+
+    filepath = data_dir / PROCESSED_FILENAME
     if not filepath.exists():
         raise FileNotFoundError(
             f"Processed data file not found at {filepath}. Please run process_and_save_data() first."
@@ -26,21 +200,12 @@ def load_processed_data(data_dir: Path = Path("processed_data")) -> pd.DataFrame
 
 
 def process_and_save_data(
-    data_dir: Path = Path("raw_data"),
-    metadata_dir: Path = Path("metadata"),
-    output_dir: Path = Path("processed_data"),
+    data_dir: Path = RAW_DATA_DIR,
+    metadata_dir: Path = METADATA_DIR,
+    output_dir: Path = PROCESSED_DATA_DIR,
 ) -> pd.DataFrame:
-    """Process raw happiness data and save to CSV.
+    """Process raw happiness data files and persist the combined dataset."""
 
-    Args:
-        data_dir: Directory containing raw CSV files for each year.
-        metadata_dir: Directory containing metadata CSV files.
-        output_dir: Directory where processed data will be saved.
-
-    Returns:
-        DataFrame with combined and processed happiness data.
-    """
-    # Define year files
     year_files = {
         2015: data_dir / "2015.csv",
         2016: data_dir / "2016.csv",
@@ -49,21 +214,166 @@ def process_and_save_data(
         2019: data_dir / "2019.csv",
     }
 
-    # Load metadata mappings
-    column_normalization = load_column_normalization(metadata_dir / "column_normalization.csv")
-    country_aliases = load_simple_mapping(metadata_dir / "country_aliases.csv", "original", "alias")
-    region_overrides = load_simple_mapping(metadata_dir / "region_overrides.csv", "country", "region")
-    continent_overrides = load_simple_mapping(metadata_dir / "continent_overrides.csv", "country", "continent")
-    region_to_continent = load_simple_mapping(metadata_dir / "region_to_continent.csv", "region", "continent")
+    missing = [year for year, path in year_files.items() if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"Missing raw data files for years: {missing}")
 
-    # Process data
-    df = load_and_combine_years(year_files, column_normalization, country_aliases, region_overrides)
-    df = enrich_with_continents(df, region_to_continent, continent_overrides)
+    ensure_metadata_assets(metadata_dir)
 
-    # Save processed data
-    output_dir.mkdir(exist_ok=True)
-    output_path = output_dir / "happiness_combined_2015_2019.csv"
+    df = load_and_combine_years(year_files, COLUMN_NORMALIZATION, COUNTRY_ALIASES, REGION_OVERRIDES)
+    df = enrich_with_continents(df, REGION_TO_CONTINENT, CONTINENT_OVERRIDES)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / PROCESSED_FILENAME
     df.to_csv(output_path, index=False)
     print(f"Saved combined dataset to {output_path}")
+
+    return df
+
+
+def ensure_metadata_assets(metadata_dir: Path = METADATA_DIR) -> None:
+    """Write metadata CSVs if they do not already exist."""
+
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+
+    column_normalization_path = metadata_dir / "column_normalization.csv"
+    if not column_normalization_path.exists():
+        rows = []
+        for year, mapping in COLUMN_NORMALIZATION.items():
+            for original, normalized in mapping.items():
+                rows.append({"year": year, "original": original, "normalized": normalized})
+        pd.DataFrame(rows).sort_values(["year", "original"]).to_csv(column_normalization_path, index=False)
+
+    country_aliases_path = metadata_dir / "country_aliases.csv"
+    if not country_aliases_path.exists():
+        alias_rows = [
+            {"original": original, "alias": alias}
+            for original, alias in sorted(COUNTRY_ALIASES.items(), key=lambda item: item[0])
+        ]
+        pd.DataFrame(alias_rows).to_csv(country_aliases_path, index=False)
+
+    region_overrides_path = metadata_dir / "region_overrides.csv"
+    if not region_overrides_path.exists():
+        region_rows = [
+            {"country": country, "region": region}
+            for country, region in sorted(REGION_OVERRIDES.items(), key=lambda item: item[0])
+        ]
+        pd.DataFrame(region_rows).to_csv(region_overrides_path, index=False)
+
+    continent_overrides_path = metadata_dir / "continent_overrides.csv"
+    if not continent_overrides_path.exists():
+        continent_rows = [
+            {"country": country, "continent": continent}
+            for country, continent in sorted(CONTINENT_OVERRIDES.items(), key=lambda item: item[0])
+        ]
+        pd.DataFrame(continent_rows).to_csv(continent_overrides_path, index=False)
+
+    region_to_continent_path = metadata_dir / "region_to_continent.csv"
+    if not region_to_continent_path.exists():
+        rtc_rows = [
+            {"region": region, "continent": continent}
+            for region, continent in sorted(REGION_TO_CONTINENT.items(), key=lambda item: item[0])
+        ]
+        pd.DataFrame(rtc_rows).to_csv(region_to_continent_path, index=False)
+
+
+def _normalize_columns(df: pd.DataFrame, year: int, column_normalization: Dict[int, Dict[str, str]]) -> pd.DataFrame:
+    mapping = column_normalization.get(year, {})
+    df = df.rename(columns=mapping)
+    df.columns = [col.strip() for col in df.columns]
+    if "country" not in df.columns:
+        raise ValueError(f"'country' column missing for {year}")
+    return df
+
+
+def _clean_country_names(df: pd.DataFrame, country_aliases: Dict[str, str]) -> pd.DataFrame:
+    df["country"] = df["country"].replace(country_aliases).str.strip()
+    return df
+
+
+def _clean_region_names(df: pd.DataFrame) -> pd.DataFrame:
+    if "region" not in df.columns:
+        df["region"] = np.nan
+    else:
+        df["region"] = df["region"].replace({"": np.nan})
+        if df["region"].notna().any():
+            df["region"] = df["region"].str.strip()
+    return df
+
+
+def _convert_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
+    numeric_cols = [
+        "happiness_rank",
+        "happiness_score",
+        "gdp_per_capita",
+        "social_support",
+        "healthy_life_expectancy",
+        "freedom",
+        "generosity",
+        "corruption_perception",
+        "dystopia_residual",
+        "standard_error",
+        "whisker_low",
+        "whisker_high",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+def harmonize_year(
+    year: int,
+    path: Path,
+    column_normalization: Dict[int, Dict[str, str]],
+    country_aliases: Dict[str, str],
+) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    df = _normalize_columns(df, year, column_normalization)
+    df = _clean_country_names(df, country_aliases)
+    df = _clean_region_names(df)
+    df["year"] = year
+    return _convert_numeric_columns(df)
+
+
+def load_and_combine_years(
+    year_files: Dict[int, Path],
+    column_normalization: Dict[int, Dict[str, str]],
+    country_aliases: Dict[str, str],
+    region_overrides: Dict[str, str],
+) -> pd.DataFrame:
+    frames = []
+    region_lookup: Dict[str, str] = {}
+
+    for yr, filepath in year_files.items():
+        df_year = harmonize_year(yr, filepath, column_normalization, country_aliases)
+        frames.append(df_year)
+        if df_year["region"].notna().any():
+            year_regions = df_year.dropna(subset=["region"])[["country", "region"]]
+            region_lookup.update(year_regions.set_index("country")["region"].to_dict())
+
+    df = pd.concat(frames, ignore_index=True, sort=False)
+    df["region"] = df["region"].fillna(df["country"].map(region_lookup))
+    df["region"] = df["region"].fillna(df["country"].map(region_overrides))
+
+    return df
+
+
+def enrich_with_continents(
+    df: pd.DataFrame,
+    region_to_continent: Dict[str, str],
+    continent_overrides: Dict[str, str],
+) -> pd.DataFrame:
+    # Delay import to keep dependencies light for users who only need CSV loading.
+    import plotly.express as px
+
+    gapminder_continents = px.data.gapminder()[["country", "continent"]].drop_duplicates()
+    continent_lookup = gapminder_continents.set_index("country")["continent"].to_dict()
+
+    df["continent"] = df["region"].map(region_to_continent)
+    df["continent"] = df["continent"].fillna(df["country"].map(continent_lookup))
+    df["continent"] = df["continent"].fillna(df["country"].map(continent_overrides))
+    df["region"] = df["region"].fillna(df["continent"])
+    df["region"] = df["region"].fillna("Unknown")
 
     return df
