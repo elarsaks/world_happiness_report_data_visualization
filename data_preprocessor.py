@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 
 # Project defaults
-RAW_DATA_DIR = Path("raw_data")
-METADATA_DIR = Path("metadata")
-PROCESSED_DATA_DIR = Path("processed_data")
+PROJECT_ROOT = Path(__file__).resolve().parent
+RAW_DATA_DIR = PROJECT_ROOT / "raw_data"
 PROCESSED_FILENAME = "happiness_combined_2015_2019.csv"
+PROCESSED_DATA_PATH = PROJECT_ROOT / PROCESSED_FILENAME
 
 
 # Metadata embedded directly in this module to avoid external CSV dependencies.
@@ -188,10 +188,9 @@ REGION_TO_CONTINENT: Dict[str, str] = {
 }
 
 
-def load_processed_data(data_dir: Path = PROCESSED_DATA_DIR) -> pd.DataFrame:
+def load_processed_data(filepath: Path = PROCESSED_DATA_PATH) -> pd.DataFrame:
     """Load pre-processed happiness data from CSV."""
 
-    filepath = data_dir / PROCESSED_FILENAME
     if not filepath.exists():
         raise FileNotFoundError(
             f"Processed data file not found at {filepath}. Please run process_and_save_data() first."
@@ -201,8 +200,7 @@ def load_processed_data(data_dir: Path = PROCESSED_DATA_DIR) -> pd.DataFrame:
 
 def process_and_save_data(
     data_dir: Path = RAW_DATA_DIR,
-    metadata_dir: Path = METADATA_DIR,
-    output_dir: Path = PROCESSED_DATA_DIR,
+    output_path: Path = PROCESSED_DATA_PATH,
 ) -> pd.DataFrame:
     """Process raw happiness data files and persist the combined dataset."""
 
@@ -218,63 +216,14 @@ def process_and_save_data(
     if missing:
         raise FileNotFoundError(f"Missing raw data files for years: {missing}")
 
-    ensure_metadata_assets(metadata_dir)
-
     df = load_and_combine_years(year_files, COLUMN_NORMALIZATION, COUNTRY_ALIASES, REGION_OVERRIDES)
     df = enrich_with_continents(df, REGION_TO_CONTINENT, CONTINENT_OVERRIDES)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / PROCESSED_FILENAME
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
     print(f"Saved combined dataset to {output_path}")
 
     return df
-
-
-def ensure_metadata_assets(metadata_dir: Path = METADATA_DIR) -> None:
-    """Write metadata CSVs if they do not already exist."""
-
-    metadata_dir.mkdir(parents=True, exist_ok=True)
-
-    column_normalization_path = metadata_dir / "column_normalization.csv"
-    if not column_normalization_path.exists():
-        rows = []
-        for year, mapping in COLUMN_NORMALIZATION.items():
-            for original, normalized in mapping.items():
-                rows.append({"year": year, "original": original, "normalized": normalized})
-        pd.DataFrame(rows).sort_values(["year", "original"]).to_csv(column_normalization_path, index=False)
-
-    country_aliases_path = metadata_dir / "country_aliases.csv"
-    if not country_aliases_path.exists():
-        alias_rows = [
-            {"original": original, "alias": alias}
-            for original, alias in sorted(COUNTRY_ALIASES.items(), key=lambda item: item[0])
-        ]
-        pd.DataFrame(alias_rows).to_csv(country_aliases_path, index=False)
-
-    region_overrides_path = metadata_dir / "region_overrides.csv"
-    if not region_overrides_path.exists():
-        region_rows = [
-            {"country": country, "region": region}
-            for country, region in sorted(REGION_OVERRIDES.items(), key=lambda item: item[0])
-        ]
-        pd.DataFrame(region_rows).to_csv(region_overrides_path, index=False)
-
-    continent_overrides_path = metadata_dir / "continent_overrides.csv"
-    if not continent_overrides_path.exists():
-        continent_rows = [
-            {"country": country, "continent": continent}
-            for country, continent in sorted(CONTINENT_OVERRIDES.items(), key=lambda item: item[0])
-        ]
-        pd.DataFrame(continent_rows).to_csv(continent_overrides_path, index=False)
-
-    region_to_continent_path = metadata_dir / "region_to_continent.csv"
-    if not region_to_continent_path.exists():
-        rtc_rows = [
-            {"region": region, "continent": continent}
-            for region, continent in sorted(REGION_TO_CONTINENT.items(), key=lambda item: item[0])
-        ]
-        pd.DataFrame(rtc_rows).to_csv(region_to_continent_path, index=False)
 
 
 def _normalize_columns(df: pd.DataFrame, year: int, column_normalization: Dict[int, Dict[str, str]]) -> pd.DataFrame:

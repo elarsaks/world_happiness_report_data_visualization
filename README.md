@@ -1,79 +1,80 @@
 # World Happiness Report Data Visualization
 
-This project explores how global happiness has evolved across five years of World Happiness Report data (2015-2019). The analysis focuses on comparing countries and regions, uncovering drivers of happiness, and highlighting notable shifts in well-being around the world.
+Explore how happiness scores evolved worldwide between 2015 and 2019. The project ships with raw data, a ready-to-use processed dataset, and a notebook that walks through the analysis and visualizations.
 
-## Project Structure
+## What's in the Folder
 
 ```
 world_happiness_report_data_visualization/
 ├── raw_data/                    # Original CSV files for each year
-│   ├── 2015.csv
-│   ├── 2016.csv
-│   ├── 2017.csv
-│   ├── 2018.csv
-│   └── 2019.csv
-├── processed_data/             # Cleaned and combined dataset
-│   └── happiness_combined_2015_2019.csv
-├── src/                        # Data processing helpers
-│   ├── __init__.py
-│   └── data_loader.py         # Self-contained processing pipeline
-├── Notebook.ipynb             # Main analysis notebook
-└── README.md
+├── happiness_combined_2015_2019.csv  # Cleaned dataset produced by the script/notebook
+├── data_preprocessor.py         # Script that regenerates the processed CSV when needed
+├── Notebook.ipynb               # Main analysis notebook
+└── README.md                    # You're reading it
 ```
 
-## Setup
+## Getting the Project (No Git Needed)
 
-### Prerequisites
+1. On GitHub, click the green **Code** button and choose **Download ZIP**.
+2. Unzip the download somewhere convenient (e.g., Desktop or Documents).
+3. Open the unzipped folder in Finder/Explorer or directly in VS Code.
 
-- Python 3.8+
-- Required packages: pandas, numpy, matplotlib, seaborn, plotly, scikit-learn
+If you already use Git, `git clone` works too—see the note at the end of this document.
 
-### Installation
+## Requirements
 
-1. Clone this repository
-2. Install dependencies:
+- Python 3.8 or newer (Anaconda, Miniconda, or python.org installers all work).
+- The following Python packages: pandas, numpy, matplotlib, seaborn, plotly, scikit-learn.
+
+To install the packages:
+
 ```bash
 pip install pandas numpy matplotlib seaborn plotly scikit-learn
 ```
 
-## Usage
+If `pip` is not recognised, open the Anaconda Prompt (Windows) or Terminal (macOS/Linux) and run the same command there.
 
-### Data Processing
+## Running the Notebook
 
-The raw data has already been processed and saved to `processed_data/happiness_combined_2015_2019.csv`. If you need to regenerate the processed data, the processing script ships with all metadata mappings embedded—no external CSVs are required:
+1. Open a terminal in the project folder. In VS Code you can use **Terminal → New Terminal**.
+2. (Optional but recommended) Create and activate a virtual environment so packages stay isolated.
+3. Launch Jupyter:
 
-```python
-from src.data_loader import process_and_save_data
-process_and_save_data()
-```
+	```bash
+	jupyter notebook Notebook.ipynb
+	```
 
-### Running the Analysis
+4. When the notebook opens in your browser, run the first code cell. It checks for `happiness_combined_2015_2019.csv` and regenerates it if missing.
+5. Continue running the remaining cells in order (use the **Run** ▶ button or press **Shift+Enter**). The notebook will produce all charts and tables used in the analysis.
 
-1. Open the notebook:
+## Regenerating the Processed CSV Without the Notebook
+
+If you prefer a one-line command, run the following from the project folder:
+
 ```bash
-jupyter notebook Notebook.ipynb
+python -c "from data_preprocessor import process_and_save_data; process_and_save_data()"
 ```
 
-2. The notebook will automatically load the processed data and guide you through the analysis.
+This rebuilds `happiness_combined_2015_2019.csv` using the embedded metadata and raw CSV files.
 
-## Research Questions
+## Troubleshooting
 
-- How do global happiness scores change from 2015 to 2019?
-- Which countries improved or declined the most across the five-year span?
-- How do regions and continents differ in their happiness trajectories?
-- Which factors show the strongest relationships with happiness over time?
+- **Plotly import errors**: make sure `plotly` is installed (`pip install plotly`).
+- **Permission denied**: if the processed CSV is open in Excel or another program, close it and rerun the cell or command.
+- **Python not found**: confirm Python is on your PATH or launch the notebook through Anaconda Navigator.
 
-## Key Findings
+## Optional: Using Git
 
-- Global happiness levels remained remarkably stable between 2015 and 2019
-- Western Europe and North America consistently lead the rankings
-- Eastern European countries showed the most improvement
-- GDP per capita, social support, and healthy life expectancy are the strongest predictors of happiness
+For teammates comfortable with Git:
 
-## Data Sources
+```bash
+git clone https://github.com/elarsaks/world_happiness_report_data_visualization.git
+cd world_happiness_report_data_visualization
+pip install pandas numpy matplotlib seaborn plotly scikit-learn
+```
 
-World Happiness Report data from 2015-2019, available from the [World Happiness Report website](https://worldhappiness.report/).
+## Data Source
 
-## License
+World Happiness Report data (2015–2019) downloaded from the [Kaggle dataset](https://www.kaggle.com/datasets/unsdsn/world-happiness?resource=download).
 
-This project is for educational and research purposes.
+
