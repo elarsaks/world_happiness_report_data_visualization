@@ -1,18 +1,99 @@
-"""Self-contained data processing helpers for the World Happiness Report."""
+"""
+World Happiness Report Data Preprocessor
+=========================================
+
+This module provides utilities for loading, cleaning, and combining World Happiness
+Report data from 2015-2019 into a single, analysis-ready dataset.
+
+Data Source
+-----------
+Original data from the World Happiness Report, available on Kaggle:
+https://www.kaggle.com/datasets/unsdsn/world-happiness
+
+Features
+--------
+- Normalizes inconsistent column names across yearly datasets
+- Standardizes country names for cross-year comparison
+- Fills missing region data using lookups and overrides
+- Enriches data with continent information
+- Validates output quality with sanity checks
+
+Usage
+-----
+As a module:
+    >>> from data_preprocessor import load_processed_data, process_and_save_data
+    >>> df = load_processed_data()  # Load existing processed data
+    >>> df = process_and_save_data()  # Regenerate from raw files
+
+From command line:
+    $ python data_preprocessor.py
+    $ python data_preprocessor.py --validate-only
+
+Output Columns
+--------------
+- country: Standardized country name
+- region: UN geoscheme-style world region (e.g., Western Europe, South Asia)
+- continent: Continent (7-continent model: Africa, Asia, Europe, North America, South America, Oceania, Antarctica)
+- year: Survey year (2015-2019)
+- happiness_rank: Rank within that year
+- happiness_score: Overall happiness score
+- gdp_per_capita: Economic output contribution
+- social_support: Social support contribution
+- healthy_life_expectancy: Health contribution
+- freedom: Freedom to make life choices contribution
+- generosity: Generosity contribution
+- corruption_perception: Trust in government contribution
+- dystopia_residual: Residual score (2015-2017 only)
+- standard_error: Standard error (2015 only)
+- whisker_low, whisker_high: Confidence intervals (2016-2017 only)
+
+Author: elarsaks
+License: CC0
+"""
 
 from __future__ import annotations
 
+import argparse
+import logging
 from pathlib import Path
 from typing import Dict
 
 import numpy as np
 import pandas as pd
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
 # Project defaults
 PROJECT_ROOT = Path(__file__).resolve().parent
 RAW_DATA_DIR = PROJECT_ROOT / "raw_data"
 PROCESSED_FILENAME = "happiness_combined_2015_2019.csv"
 PROCESSED_DATA_PATH = PROJECT_ROOT / PROCESSED_FILENAME
+
+# Explicit column order for reproducible output
+OUTPUT_COLUMNS = [
+    "country",
+    "region",
+    "continent",
+    "year",
+    "happiness_rank",
+    "happiness_score",
+    "gdp_per_capita",
+    "social_support",
+    "healthy_life_expectancy",
+    "freedom",
+    "generosity",
+    "corruption_perception",
+    "dystopia_residual",
+    "standard_error",
+    "whisker_low",
+    "whisker_high",
+]
 
 
 # Metadata embedded directly in this module to avoid external CSV dependencies.
@@ -84,6 +165,13 @@ COLUMN_NORMALIZATION: Dict[int, Dict[str, str]] = {
     },
 }
 
+# =============================================================================
+# GEOGRAPHIC MAPPINGS
+# NOTE: The following mappings (COUNTRY_ALIASES, COUNTRY_TO_REGION, REGION_TO_CONTINENT)
+# were generated with AI assistance and have not been manually verified for complete
+# accuracy. Users should review and validate these mappings for their specific use cases.
+# =============================================================================
+
 COUNTRY_ALIASES: Dict[str, str] = {
     "Trinidad & Tobago": "Trinidad and Tobago",
     "Taiwan Province of China": "Taiwan",
@@ -102,107 +190,255 @@ COUNTRY_ALIASES: Dict[str, str] = {
     "Slovak Republic": "Slovakia",
 }
 
-REGION_OVERRIDES: Dict[str, str] = {
-    "Taiwan": "Eastern Asia",
-    "Hong Kong": "Eastern Asia",
-    "Macedonia": "Central and Eastern Europe",
-    "Somaliland Region": "Sub-Saharan Africa",
-    "Somalia": "Sub-Saharan Africa",
-    "South Sudan": "Sub-Saharan Africa",
-    "Gambia": "Sub-Saharan Africa",
-    "Lesotho": "Sub-Saharan Africa",
-    "Namibia": "Sub-Saharan Africa",
-    "Mozambique": "Sub-Saharan Africa",
-    "Madagascar": "Sub-Saharan Africa",
-    "Laos": "Southeastern Asia",
-    "Vietnam": "Southeastern Asia",
-    "Myanmar": "Southeastern Asia",
-    "Bhutan": "Southern Asia",
-    "Bangladesh": "Southern Asia",
-    "Cambodia": "Southeastern Asia",
-    "Belarus": "Central and Eastern Europe",
-    "Serbia": "Central and Eastern Europe",
-    "Bosnia and Herzegovina": "Central and Eastern Europe",
-    "Albania": "Central and Eastern Europe",
-    "Azerbaijan": "Central and Eastern Europe",
-    "Kazakhstan": "Central and Eastern Europe",
-    "Kyrgyzstan": "Central and Eastern Europe",
-    "Mongolia": "Eastern Asia",
-    "Armenia": "Central and Eastern Europe",
-    "Georgia": "Central and Eastern Europe",
-    "Uzbekistan": "Central and Eastern Europe",
-    "Turkmenistan": "Central and Eastern Europe",
-    "Tajikistan": "Central and Eastern Europe",
-    "Ukraine": "Central and Eastern Europe",
-    "Palestinian Territories": "Middle East and Northern Africa",
-    "Bahrain": "Middle East and Northern Africa",
-    "Qatar": "Middle East and Northern Africa",
-    "Saudi Arabia": "Middle East and Northern Africa",
-    "United Arab Emirates": "Middle East and Northern Africa",
-    "Oman": "Middle East and Northern Africa",
-    "Kuwait": "Middle East and Northern Africa",
-    "Yemen": "Middle East and Northern Africa",
-    "Iraq": "Middle East and Northern Africa",
-    "Iran": "Middle East and Northern Africa",
-    "Lebanon": "Middle East and Northern Africa",
-    "Jordan": "Middle East and Northern Africa",
-    "Algeria": "Middle East and Northern Africa",
-    "Morocco": "Middle East and Northern Africa",
-    "Tunisia": "Middle East and Northern Africa",
-}
-
-CONTINENT_OVERRIDES: Dict[str, str] = {
-    "Hong Kong": "Asia",
-    "Taiwan": "Asia",
-    "Somaliland Region": "Africa",
-    "Palestinian Territories": "Asia",
-    "Kosovo": "Europe",
-    "Macedonia": "Europe",
-    "Congo (Brazzaville)": "Africa",
-    "Congo (Kinshasa)": "Africa",
-    "Trinidad and Tobago": "Americas",
-    "United Arab Emirates": "Asia",
-    "Saudi Arabia": "Asia",
-    "Qatar": "Asia",
-    "Bahrain": "Asia",
-    "Oman": "Asia",
-    "Kuwait": "Asia",
-    "Yemen": "Asia",
-    "Iraq": "Asia",
-    "Iran": "Asia",
-}
 
 REGION_TO_CONTINENT: Dict[str, str] = {
+    "Eastern Europe": "Europe",
     "Western Europe": "Europe",
-    "Central and Eastern Europe": "Europe",
-    "Eastern Asia": "Asia",
-    "Southeastern Asia": "Asia",
-    "Southern Asia": "Asia",
-    "Central Asia": "Asia",
-    "Australia and New Zealand": "Oceania",
-    "North America": "Americas",
-    "Latin America and Caribbean": "Americas",
+    "Northern Europe": "Europe",
+    "Southern Europe": "Europe",
+    "Northern Africa": "Africa",
     "Sub-Saharan Africa": "Africa",
-    "Middle East and Northern Africa": "Middle East & North Africa",
-    "Commonwealth of Independent States": "Europe & Central Asia",
+    "Western Asia / Middle East": "Asia",
+    "Central Asia": "Asia",
+    "South Asia": "Asia",
+    "East Asia": "Asia",
+    "Southeast Asia": "Asia",
+    "North America": "North America",
+    "Central America": "North America",
+    "Caribbean": "North America",
+    "South America": "South America",
+    "Oceania": "Oceania",
+    "Antarctica": "Antarctica",
+}
+
+
+COUNTRY_TO_REGION: Dict[str, str] = {
+    "Afghanistan": "South Asia",
+    "Albania": "Southern Europe",
+    "Algeria": "Northern Africa",
+    "Angola": "Sub-Saharan Africa",
+    "Argentina": "South America",
+    "Armenia": "Western Asia / Middle East",
+    "Australia": "Oceania",
+    "Austria": "Western Europe",
+    "Azerbaijan": "Western Asia / Middle East",
+    "Bahrain": "Western Asia / Middle East",
+    "Bangladesh": "South Asia",
+    "Belarus": "Eastern Europe",
+    "Belgium": "Western Europe",
+    "Belize": "Central America",
+    "Benin": "Sub-Saharan Africa",
+    "Bhutan": "South Asia",
+    "Bolivia": "South America",
+    "Bosnia and Herzegovina": "Southern Europe",
+    "Botswana": "Sub-Saharan Africa",
+    "Brazil": "South America",
+    "Bulgaria": "Eastern Europe",
+    "Burkina Faso": "Sub-Saharan Africa",
+    "Burundi": "Sub-Saharan Africa",
+    "Cambodia": "Southeast Asia",
+    "Cameroon": "Sub-Saharan Africa",
+    "Canada": "North America",
+    "Central African Republic": "Sub-Saharan Africa",
+    "Chad": "Sub-Saharan Africa",
+    "Chile": "South America",
+    "China": "East Asia",
+    "Colombia": "South America",
+    "Comoros": "Sub-Saharan Africa",
+    "Congo (Brazzaville)": "Sub-Saharan Africa",
+    "Congo (Kinshasa)": "Sub-Saharan Africa",
+    "Costa Rica": "Central America",
+    "Croatia": "Southern Europe",
+    "Cyprus": "Western Asia / Middle East",
+    "Czech Republic": "Eastern Europe",
+    "Denmark": "Northern Europe",
+    "Djibouti": "Sub-Saharan Africa",
+    "Dominican Republic": "Caribbean",
+    "Ecuador": "South America",
+    "Egypt": "Northern Africa",
+    "El Salvador": "Central America",
+    "Estonia": "Northern Europe",
+    "Ethiopia": "Sub-Saharan Africa",
+    "Finland": "Northern Europe",
+    "France": "Western Europe",
+    "Gabon": "Sub-Saharan Africa",
+    "Gambia": "Sub-Saharan Africa",
+    "Georgia": "Western Asia / Middle East",
+    "Germany": "Western Europe",
+    "Ghana": "Sub-Saharan Africa",
+    "Greece": "Southern Europe",
+    "Guatemala": "Central America",
+    "Guinea": "Sub-Saharan Africa",
+    "Haiti": "Caribbean",
+    "Honduras": "Central America",
+    "Hong Kong": "East Asia",
+    "Hungary": "Eastern Europe",
+    "Iceland": "Northern Europe",
+    "India": "South Asia",
+    "Indonesia": "Southeast Asia",
+    "Iran": "Western Asia / Middle East",
+    "Iraq": "Western Asia / Middle East",
+    "Ireland": "Northern Europe",
+    "Israel": "Western Asia / Middle East",
+    "Italy": "Southern Europe",
+    "Ivory Coast": "Sub-Saharan Africa",
+    "Jamaica": "Caribbean",
+    "Japan": "East Asia",
+    "Jordan": "Western Asia / Middle East",
+    "Kazakhstan": "Central Asia",
+    "Kenya": "Sub-Saharan Africa",
+    "Kosovo": "Southern Europe",
+    "Kuwait": "Western Asia / Middle East",
+    "Kyrgyzstan": "Central Asia",
+    "Laos": "Southeast Asia",
+    "Latvia": "Northern Europe",
+    "Lebanon": "Western Asia / Middle East",
+    "Lesotho": "Sub-Saharan Africa",
+    "Liberia": "Sub-Saharan Africa",
+    "Libya": "Northern Africa",
+    "Lithuania": "Northern Europe",
+    "Luxembourg": "Western Europe",
+    "Macedonia": "Southern Europe",
+    "Madagascar": "Sub-Saharan Africa",
+    "Malawi": "Sub-Saharan Africa",
+    "Malaysia": "Southeast Asia",
+    "Mali": "Sub-Saharan Africa",
+    "Malta": "Southern Europe",
+    "Mauritania": "Sub-Saharan Africa",
+    "Mauritius": "Sub-Saharan Africa",
+    "Mexico": "Central America",
+    "Moldova": "Eastern Europe",
+    "Mongolia": "East Asia",
+    "Montenegro": "Southern Europe",
+    "Morocco": "Northern Africa",
+    "Mozambique": "Sub-Saharan Africa",
+    "Myanmar": "Southeast Asia",
+    "Namibia": "Sub-Saharan Africa",
+    "Nepal": "South Asia",
+    "Netherlands": "Western Europe",
+    "New Zealand": "Oceania",
+    "Nicaragua": "Central America",
+    "Niger": "Sub-Saharan Africa",
+    "Nigeria": "Sub-Saharan Africa",
+    "North Cyprus": "Western Asia / Middle East",
+    "Northern Cyprus": "Western Asia / Middle East",
+    "Norway": "Northern Europe",
+    "Oman": "Western Asia / Middle East",
+    "Pakistan": "South Asia",
+    "Palestinian Territories": "Western Asia / Middle East",
+    "Panama": "Central America",
+    "Paraguay": "South America",
+    "Peru": "South America",
+    "Philippines": "Southeast Asia",
+    "Poland": "Eastern Europe",
+    "Portugal": "Southern Europe",
+    "Puerto Rico": "Caribbean",
+    "Qatar": "Western Asia / Middle East",
+    "Romania": "Eastern Europe",
+    "Russian Federation": "Eastern Europe",
+    "Rwanda": "Sub-Saharan Africa",
+    "Saudi Arabia": "Western Asia / Middle East",
+    "Senegal": "Sub-Saharan Africa",
+    "Serbia": "Southern Europe",
+    "Sierra Leone": "Sub-Saharan Africa",
+    "Singapore": "Southeast Asia",
+    "Slovakia": "Eastern Europe",
+    "Slovenia": "Southern Europe",
+    "Somalia": "Sub-Saharan Africa",
+    "Somaliland Region": "Sub-Saharan Africa",
+    "Somaliland region": "Sub-Saharan Africa",
+    "South Africa": "Sub-Saharan Africa",
+    "South Korea": "East Asia",
+    "South Sudan": "Sub-Saharan Africa",
+    "Spain": "Southern Europe",
+    "Sri Lanka": "South Asia",
+    "Sudan": "Northern Africa",
+    "Suriname": "South America",
+    "Swaziland": "Sub-Saharan Africa",
+    "Sweden": "Northern Europe",
+    "Switzerland": "Western Europe",
+    "Syria": "Western Asia / Middle East",
+    "Taiwan": "East Asia",
+    "Tajikistan": "Central Asia",
+    "Tanzania": "Sub-Saharan Africa",
+    "Thailand": "Southeast Asia",
+    "Togo": "Sub-Saharan Africa",
+    "Trinidad and Tobago": "Caribbean",
+    "Tunisia": "Northern Africa",
+    "Turkey": "Western Asia / Middle East",
+    "Turkmenistan": "Central Asia",
+    "Uganda": "Sub-Saharan Africa",
+    "Ukraine": "Eastern Europe",
+    "United Arab Emirates": "Western Asia / Middle East",
+    "United Kingdom": "Northern Europe",
+    "United States": "North America",
+    "Uruguay": "South America",
+    "Uzbekistan": "Central Asia",
+    "Venezuela": "South America",
+    "Vietnam": "Southeast Asia",
+    "Yemen": "Western Asia / Middle East",
+    "Zambia": "Sub-Saharan Africa",
+    "Zimbabwe": "Sub-Saharan Africa",
 }
 
 
 def load_processed_data(filepath: Path = PROCESSED_DATA_PATH) -> pd.DataFrame:
-    """Load pre-processed happiness data from CSV."""
+    """Load pre-processed happiness data from CSV.
 
+    Parameters
+    ----------
+    filepath : Path
+        Path to the processed CSV file.
+
+    Returns
+    -------
+    pd.DataFrame
+        The loaded happiness dataset.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the processed data file does not exist.
+    """
     if not filepath.exists():
         raise FileNotFoundError(
             f"Processed data file not found at {filepath}. Please run process_and_save_data() first."
         )
-    return pd.read_csv(filepath)
+    logger.info("Loading processed data from %s", filepath)
+    df = pd.read_csv(filepath)
+    logger.info("Loaded %d rows, %d columns", len(df), len(df.columns))
+    return df
 
 
 def process_and_save_data(
     data_dir: Path = RAW_DATA_DIR,
     output_path: Path = PROCESSED_DATA_PATH,
+    validate: bool = True,
 ) -> pd.DataFrame:
-    """Process raw happiness data files and persist the combined dataset."""
+    """Process raw happiness data files and persist the combined dataset.
+
+    Parameters
+    ----------
+    data_dir : Path
+        Directory containing raw yearly CSV files.
+    output_path : Path
+        Path where the combined CSV will be saved.
+    validate : bool
+        If True, run validation checks on the output data.
+
+    Returns
+    -------
+    pd.DataFrame
+        The combined and processed dataset.
+
+    Raises
+    ------
+    FileNotFoundError
+        If any raw data files are missing.
+    ValueError
+        If validation fails (when validate=True).
+    """
+    logger.info("Starting data processing...")
 
     year_files = {
         2015: data_dir / "2015.csv",
@@ -216,12 +452,28 @@ def process_and_save_data(
     if missing:
         raise FileNotFoundError(f"Missing raw data files for years: {missing}")
 
-    df = load_and_combine_years(year_files, COLUMN_NORMALIZATION, COUNTRY_ALIASES, REGION_OVERRIDES)
-    df = enrich_with_continents(df, REGION_TO_CONTINENT, CONTINENT_OVERRIDES)
+    logger.info("Loading and combining data from %d years", len(year_files))
+    df = load_and_combine_years(
+        year_files,
+        COLUMN_NORMALIZATION,
+        COUNTRY_ALIASES,
+        COUNTRY_TO_REGION,
+    )
+
+    logger.info("Enriching with geographic metadata")
+    df = enrich_with_continents(df, REGION_TO_CONTINENT)
+
+    # Reorder columns for consistent output
+    output_cols = [col for col in OUTPUT_COLUMNS if col in df.columns]
+    extra_cols = [col for col in df.columns if col not in OUTPUT_COLUMNS]
+    df = df[output_cols + extra_cols]
+
+    if validate:
+        validate_data(df)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
-    print(f"Saved combined dataset to {output_path}")
+    logger.info("Saved combined dataset to %s (%d rows)", output_path, len(df))
 
     return df
 
@@ -289,21 +541,20 @@ def load_and_combine_years(
     year_files: Dict[int, Path],
     column_normalization: Dict[int, Dict[str, str]],
     country_aliases: Dict[str, str],
-    region_overrides: Dict[str, str],
+    country_to_region: Dict[str, str],
 ) -> pd.DataFrame:
     frames = []
-    region_lookup: Dict[str, str] = {}
-
     for yr, filepath in year_files.items():
         df_year = harmonize_year(yr, filepath, column_normalization, country_aliases)
         frames.append(df_year)
-        if df_year["region"].notna().any():
-            year_regions = df_year.dropna(subset=["region"])[["country", "region"]]
-            region_lookup.update(year_regions.set_index("country")["region"].to_dict())
 
     df = pd.concat(frames, ignore_index=True, sort=False)
-    df["region"] = df["region"].fillna(df["country"].map(region_lookup))
-    df["region"] = df["region"].fillna(df["country"].map(region_overrides))
+    df["region"] = df["country"].map(country_to_region)
+
+    # Fail fast on unmapped countries
+    unmapped = df[df["region"].isna()]["country"].unique()
+    if len(unmapped) > 0:
+        raise ValueError(f"Unmapped countries (add to COUNTRY_TO_REGION): {sorted(unmapped)}")
 
     return df
 
@@ -311,18 +562,138 @@ def load_and_combine_years(
 def enrich_with_continents(
     df: pd.DataFrame,
     region_to_continent: Dict[str, str],
-    continent_overrides: Dict[str, str],
 ) -> pd.DataFrame:
-    # Delay import to keep dependencies light for users who only need CSV loading.
-    import plotly.express as px
+    """Add continent column based on region.
 
-    gapminder_continents = px.data.gapminder()[["country", "continent"]].drop_duplicates()
-    continent_lookup = gapminder_continents.set_index("country")["continent"].to_dict()
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with 'region' column already populated.
+    region_to_continent : Dict[str, str]
+        Mapping from region names to continent names.
 
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with 'continent' column added.
+    """
     df["continent"] = df["region"].map(region_to_continent)
-    df["continent"] = df["continent"].fillna(df["country"].map(continent_lookup))
-    df["continent"] = df["continent"].fillna(df["country"].map(continent_overrides))
-    df["region"] = df["region"].fillna(df["continent"])
-    df["region"] = df["region"].fillna("Unknown")
-
     return df
+
+
+def validate_data(df: pd.DataFrame) -> None:
+    """Run sanity checks on the processed dataset.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The processed happiness dataset.
+
+    Raises
+    ------
+    ValueError
+        If any validation check fails.
+    """
+    issues = []
+
+    # Check for required columns
+    required_cols = ["country", "year", "happiness_score", "happiness_rank"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        issues.append(f"Missing required columns: {missing_cols}")
+
+    # Check for duplicate country-year combinations
+    duplicates = df.duplicated(subset=["country", "year"], keep=False)
+    if duplicates.any():
+        dup_count = duplicates.sum()
+        dup_examples = df[duplicates][["country", "year"]].drop_duplicates().head(5)
+        issues.append(f"Found {dup_count} duplicate country-year rows. Examples: {dup_examples.to_dict('records')}")
+
+    # Check row counts per year
+    year_counts = df.groupby("year").size()
+    logger.info("Row counts per year:\n%s", year_counts.to_string())
+
+    # Warn if any year has unusually few countries
+    for year, count in year_counts.items():
+        if count < 100:
+            logger.warning("Year %d has only %d countries (expected ~150+)", year, count)
+
+    # Check for null happiness scores
+    null_scores = df["happiness_score"].isna().sum()
+    if null_scores > 0:
+        issues.append(f"Found {null_scores} rows with null happiness_score")
+
+    # Check happiness score range (should be roughly 0-10)
+    min_score = df["happiness_score"].min()
+    max_score = df["happiness_score"].max()
+    if min_score < 0 or max_score > 10:
+        issues.append(f"Happiness scores outside expected range [0-10]: min={min_score}, max={max_score}")
+    logger.info("Happiness score range: %.3f - %.3f", min_score, max_score)
+
+    # Report unique values
+    logger.info("Unique countries: %d", df["country"].nunique())
+    logger.info("Unique regions: %d", df["region"].nunique())
+    logger.info("Unique continents: %d", df["continent"].nunique())
+    logger.info("Years covered: %s", sorted(df["year"].unique()))
+
+    if issues:
+        for issue in issues:
+            logger.error("Validation error: %s", issue)
+        raise ValueError(f"Data validation failed with {len(issues)} issue(s)")
+
+    logger.info("Data validation passed ✓")
+
+
+def main() -> None:
+    """Command-line entry point for data processing."""
+    parser = argparse.ArgumentParser(
+        description="Process World Happiness Report data (2015-2019)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python data_preprocessor.py                  # Process and save data
+  python data_preprocessor.py --validate-only  # Only validate existing data
+  python data_preprocessor.py --no-validate    # Skip validation checks
+""",
+    )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Only validate existing processed data without regenerating",
+    )
+    parser.add_argument(
+        "--no-validate",
+        action="store_true",
+        help="Skip validation checks during processing",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=PROCESSED_DATA_PATH,
+        help=f"Output file path (default: {PROCESSED_DATA_PATH})",
+    )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Enable verbose (debug) logging",
+    )
+
+    args = parser.parse_args()
+
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    if args.validate_only:
+        logger.info("Validation-only mode")
+        df = load_processed_data()
+        validate_data(df)
+    else:
+        process_and_save_data(
+            output_path=args.output,
+            validate=not args.no_validate,
+        )
+
+
+if __name__ == "__main__":
+    main()
