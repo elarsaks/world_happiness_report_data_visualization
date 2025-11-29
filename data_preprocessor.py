@@ -35,7 +35,6 @@ Output Columns
 - region: UN geoscheme-style world region (e.g., Western Europe, South Asia)
 - continent: Continent (7-continent model: Africa, Asia, Europe, North America, South America, Oceania, Antarctica)
 - year: Survey year (2015-2019)
-- happiness_rank: Rank within that year
 - happiness_score: Overall happiness score
 - gdp_per_capita: Economic output contribution
 - social_support: Social support contribution
@@ -43,9 +42,6 @@ Output Columns
 - freedom: Freedom to make life choices contribution
 - generosity: Generosity contribution
 - corruption_perception: Trust in government contribution
-- dystopia_residual: Residual score (2015-2017 only)
-- standard_error: Standard error (2015 only)
-- whisker_low, whisker_high: Confidence intervals (2016-2017 only)
 
 Author: elarsaks
 License: CC0
@@ -81,7 +77,6 @@ OUTPUT_COLUMNS = [
     "region",
     "continent",
     "year",
-    "happiness_rank",
     "happiness_score",
     "gdp_per_capita",
     "social_support",
@@ -89,10 +84,6 @@ OUTPUT_COLUMNS = [
     "freedom",
     "generosity",
     "corruption_perception",
-    "dystopia_residual",
-    "standard_error",
-    "whisker_low",
-    "whisker_high",
 ]
 
 
@@ -463,10 +454,8 @@ def process_and_save_data(
     logger.info("Enriching with geographic metadata")
     df = enrich_with_continents(df, REGION_TO_CONTINENT)
 
-    # Reorder columns for consistent output
-    output_cols = [col for col in OUTPUT_COLUMNS if col in df.columns]
-    extra_cols = [col for col in df.columns if col not in OUTPUT_COLUMNS]
-    df = df[output_cols + extra_cols]
+    # Keep only the columns we need, in order
+    df = df[[col for col in OUTPUT_COLUMNS if col in df.columns]]
 
     if validate:
         validate_data(df)
@@ -504,7 +493,6 @@ def _clean_region_names(df: pd.DataFrame) -> pd.DataFrame:
 
 def _convert_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
     numeric_cols = [
-        "happiness_rank",
         "happiness_score",
         "gdp_per_capita",
         "social_support",
@@ -512,10 +500,6 @@ def _convert_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
         "freedom",
         "generosity",
         "corruption_perception",
-        "dystopia_residual",
-        "standard_error",
-        "whisker_low",
-        "whisker_high",
     ]
     for col in numeric_cols:
         if col in df.columns:
@@ -597,7 +581,7 @@ def validate_data(df: pd.DataFrame) -> None:
     issues = []
 
     # Check for required columns
-    required_cols = ["country", "year", "happiness_score", "happiness_rank"]
+    required_cols = ["country", "year", "happiness_score"]
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
         issues.append(f"Missing required columns: {missing_cols}")
